@@ -18,12 +18,9 @@ interface Props {
 }
 
 const FIELDS: { key: EditableField; label: string }[] = [
-  { key: "pregador_id", label: "PREGADOR" },
-  { key: "ministro_id", label: "MINISTRO" },
-  { key: "back1_id", label: "BACK 1" },
-  { key: "back2_id", label: "BACK 2" },
-  { key: "back3_id", label: "BACK 3" },
-  { key: "instrumento_id", label: "🎹🎸🥁" },
+  { key: "pregador_id", label: "MESA DE SOM" },
+  { key: "ministro_id", label: "PC (PROJEÇÃO)" },
+  { key: "back1_id", label: "FOTOS / VIDEOS" },
 ];
 
 function getPaleta(config?: Configuracoes | null) {
