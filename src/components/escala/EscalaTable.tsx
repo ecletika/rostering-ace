@@ -129,7 +129,7 @@ export function EscalaTable({
           <tbody>
             {datas.length === 0 && (
               <tr>
-                <td colSpan={6} className="text-center py-6 text-muted-foreground">
+                <td colSpan={FIELDS.length + 1} className="text-center py-6 text-muted-foreground">
                   Sem datas neste mês.
                 </td>
               </tr>
