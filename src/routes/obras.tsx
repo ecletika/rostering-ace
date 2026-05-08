@@ -1,5 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { useState, useEffect, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 /* ─── CSS injectado em <head> via useEffect para isolar do Tailwind ─── */
 const OBRAS_CSS = `
@@ -188,12 +189,16 @@ const pageMeta: Record<Screen, { title: string; sub: string; btn: string }> = {
 
 const DAYS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
+type KioskObra = { id: string; name: string; client: string; authorized: boolean };
+
 function ObrasApp() {
   const [screen, setScreen] = useState<Screen>("dashboard");
   const [kStep, setKStep] = useState(0);
   const [pin, setPin] = useState("");
   const [kTime, setKTime] = useState("--:--");
   const [aprovBadge, setAprovBadge] = useState(4);
+  const [kioskObras, setKioskObras] = useState<KioskObra[]>([]);
+  const [kioskLoading, setKioskLoading] = useState(false);
 
   /* Inject CSS once */
   useEffect(() => {
@@ -214,6 +219,45 @@ function ObrasApp() {
     const id = setInterval(tick, 1000);
     return () => clearInterval(id);
   }, []);
+
+  /* Carrega obras autorizadas via RPC (SECURITY DEFINER — funciona sem auth) */
+  useEffect(() => {
+    if (screen !== "kiosk") return;
+    setKioskLoading(true);
+
+    // Tentar obter o employee_id do utilizador autenticado
+    supabase.auth.getUser().then(async ({ data: { user } }) => {
+      let employeeId: string | null = null;
+
+      if (user) {
+        const { data: emp } = await supabase
+          .from("employees")
+          .select("id")
+          .eq("auth_user_id", user.id)
+          .maybeSingle();
+        employeeId = emp?.id ?? null;
+      }
+
+      // Chamar RPC que contorna RLS de forma segura
+      const { data, error } = await supabase.rpc("m22_kiosk_obras", {
+        p_employee_id: employeeId,
+      });
+
+      if (!error && data) {
+        setKioskObras(
+          (data as any[]).map((row) => ({
+            id: row.id,
+            name: row.name,
+            client: row.client_name,
+            authorized: row.authorized,
+          }))
+        );
+      } else {
+        setKioskObras([]);
+      }
+      setKioskLoading(false);
+    });
+  }, [screen]);
 
   /* PIN */
   const addPin = (v: string) => { if (pin.length < 4) setPin(p => p + v); };
@@ -288,7 +332,7 @@ function ObrasApp() {
             {screen==="obras"        && <SObras/>}
             {screen==="equipas"      && <SEquipas/>}
             {screen==="alocacoes"    && <SAlocacoes calDays={calDays}/>}
-            {screen==="kiosk"        && <SKiosk kStep={kStep} goKStep={goKStep} pin={pinDisplay} addPin={addPin} clearPin={clearPin} confirmPin={confirmPin} kTime={kTime}/>}
+            {screen==="kiosk"        && <SKiosk kStep={kStep} goKStep={goKStep} pin={pinDisplay} addPin={addPin} clearPin={clearPin} confirmPin={confirmPin} kTime={kTime} obras={kioskObras} obrasLoading={kioskLoading}/>}
             {screen==="aprovacoes"   && <SAprovacoes onApprove={()=>setAprovBadge(b=>Math.max(0,b-1))}/>}
             {screen==="relatorios"   && <SRelatorios/>}
             {screen==="auditoria"    && <SAuditoria/>}
@@ -713,9 +757,10 @@ function SAlocacoes({calDays}:{calDays:{d:Date;offset:number}[]}) {
 /* ────────────────────────────────────────────────────────────
    KIOSK
 ──────────────────────────────────────────────────────────── */
-function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime}:{
+function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime,obras,obrasLoading}:{
   kStep:number;goKStep:(n:number)=>void;pin:string;
   addPin:(v:string)=>void;clearPin:()=>void;confirmPin:()=>void;kTime:string;
+  obras:KioskObra[];obrasLoading:boolean;
 }) {
   const today = new Date();
   const dateStr = today.toLocaleDateString("pt-PT",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
@@ -775,16 +820,32 @@ function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime}:{
               )}
               {kStep===3 && (
                 <div>
-                  <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:8}}>Obras autorizadas para João Silva:</div>
+                  <div style={{fontSize:12,color:"rgba(255,255,255,0.5)",marginBottom:8}}>
+                    {obrasLoading ? "A carregar obras…" : obras.length === 0 ? "Sem obras autorizadas" : "Obras autorizadas:"}
+                  </div>
                   <div className="kiosk-obras-list">
-                    {[{name:"Prédio Lisboa Centro",client:"ABC Construções",badge:"Planeada",cls:"kib-plan",dot:"var(--teal-400)"},
-                      {name:"Moradia Cascais",client:"XPTO Remodelações",badge:"Autorizada",cls:"kib-auth",dot:"var(--amber-400)"},
-                      {name:"Armazém Sintra",client:"SulNorte Obras",badge:"Autorizada",cls:"kib-auth",dot:"var(--amber-400)"},
-                    ].map(o=>(
-                      <div key={o.name} className="kiosk-obra-item" onClick={()=>goKStep(4)}>
-                        <div className="kiosk-obra-item-dot" style={{background:o.dot}}/>
-                        <div><div className="kiosk-obra-item-name">{o.name}</div><div className="kiosk-obra-item-client">{o.client}</div></div>
-                        <span className={`kiosk-obra-item-badge ${o.cls}`}>{o.badge}</span>
+                    {obrasLoading && (
+                      <div style={{textAlign:"center",padding:"16px 0",color:"rgba(255,255,255,0.4)",fontSize:12}}>
+                        <i className="ti ti-loader-2" style={{fontSize:20,display:"block",marginBottom:6}}/> A carregar…
+                      </div>
+                    )}
+                    {!obrasLoading && obras.length === 0 && (
+                      <div style={{textAlign:"center",padding:"16px 0",color:"rgba(255,255,255,0.35)",fontSize:12}}>
+                        <i className="ti ti-building-off" style={{fontSize:24,display:"block",marginBottom:6}}/>
+                        Nenhuma obra autorizada encontrada.<br/>
+                        <span style={{fontSize:10}}>Peça ao administrador para autorizar obras.</span>
+                      </div>
+                    )}
+                    {!obrasLoading && obras.map(o=>(
+                      <div key={o.id} className="kiosk-obra-item" onClick={()=>goKStep(4)}>
+                        <div className="kiosk-obra-item-dot" style={{background: o.authorized ? "var(--amber-400)" : "var(--teal-400)"}}/>
+                        <div>
+                          <div className="kiosk-obra-item-name">{o.name}</div>
+                          <div className="kiosk-obra-item-client">{o.client}</div>
+                        </div>
+                        <span className={`kiosk-obra-item-badge ${o.authorized ? "kib-auth" : "kib-plan"}`}>
+                          {o.authorized ? "Autorizada" : "Disponível"}
+                        </span>
                       </div>
                     ))}
                   </div>
