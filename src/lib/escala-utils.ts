@@ -33,16 +33,3 @@ export function parseIsoDate(s: string): Date {
 export function tituloTipo(tipo: TipoEscala): string {
   return tipo === "quarta" ? "QUARTA-FEIRA" : "DOMINGO";
 }
-
-const ADMIN_KEY = "escala_admin_auth";
-export const ADMIN_PASSWORD = "admin123";
-
-export function isAdminAuthed(): boolean {
-  if (typeof window === "undefined") return false;
-  return localStorage.getItem(ADMIN_KEY) === "1";
-}
-export function setAdminAuthed(v: boolean) {
-  if (typeof window === "undefined") return;
-  if (v) localStorage.setItem(ADMIN_KEY, "1");
-  else localStorage.removeItem(ADMIN_KEY);
-}
