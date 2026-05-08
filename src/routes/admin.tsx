@@ -3,7 +3,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { EscalaTable } from "@/components/escala/EscalaTable";
 import {
-  ADMIN_PASSWORD, MESES, getDiasDoMes, isAdminAuthed, setAdminAuthed, toIsoDate, type TipoEscala,
+  MESES, getDiasDoMes, toIsoDate, type TipoEscala,
 } from "@/lib/escala-utils";
 import type { Colaborador, Configuracoes, EscalaRow, Versiculo } from "@/lib/types-escala";
 import { Button } from "@/components/ui/button";
@@ -20,36 +20,101 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminPage() {
-  const [authed, setAuthed] = useState(false);
+  const [checking, setChecking] = useState(true);
+  const [isAdmin, setIsAdmin] = useState(false);
+  const [email, setEmail] = useState("");
   const [pwd, setPwd] = useState("");
-  useEffect(() => setAuthed(isAdminAuthed()), []);
+  const [mode, setMode] = useState<"login" | "signup">("login");
+  const [loading, setLoading] = useState(false);
 
-  if (!authed) {
+  const checkAdmin = async () => {
+    setChecking(true);
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) { setIsAdmin(false); setChecking(false); return; }
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("role", "admin")
+      .maybeSingle();
+    setIsAdmin(!!data);
+    setChecking(false);
+  };
+
+  useEffect(() => {
+    checkAdmin();
+    const { data: sub } = supabase.auth.onAuthStateChange(() => {
+      checkAdmin();
+    });
+    return () => sub.subscription.unsubscribe();
+  }, []);
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    try {
+      if (mode === "signup") {
+        const redirectUrl = `${window.location.origin}/admin`;
+        const { error } = await supabase.auth.signUp({
+          email, password: pwd,
+          options: { emailRedirectTo: redirectUrl },
+        });
+        if (error) throw error;
+        toast.success("Conta criada. Verifique o e-mail se necessário.");
+      } else {
+        const { error } = await supabase.auth.signInWithPassword({ email, password: pwd });
+        if (error) throw error;
+        toast.success("Bem-vindo!");
+      }
+    } catch (err: any) {
+      toast.error(err?.message ?? "Erro de autenticação");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const logout = async () => {
+    await supabase.auth.signOut();
+    setIsAdmin(false);
+  };
+
+  if (checking) {
+    return <div className="min-h-screen flex items-center justify-center text-sm text-muted-foreground">Carregando…</div>;
+  }
+
+  if (!isAdmin) {
     return (
       <div className="min-h-screen flex items-center justify-center px-4" style={{ background: "var(--gradient-page)" }}>
         <Card className="w-full max-w-sm p-6 space-y-4">
           <h1 className="text-xl font-bold text-center">Área administrativa</h1>
-          <p className="text-sm text-muted-foreground text-center">Digite a senha para acessar.</p>
-          <form
-            onSubmit={(e) => {
-              e.preventDefault();
-              if (pwd === ADMIN_PASSWORD) { setAdminAuthed(true); setAuthed(true); toast.success("Bem-vindo!"); }
-              else toast.error("Senha incorreta");
-            }}
-            className="space-y-3"
-          >
-            <Input type="password" placeholder="Senha" value={pwd} onChange={(e) => setPwd(e.target.value)} autoFocus />
-            <Button type="submit" className="w-full">Entrar</Button>
+          <p className="text-sm text-muted-foreground text-center">
+            {mode === "login" ? "Faça login para acessar." : "Crie uma conta para acessar."}
+          </p>
+          <form onSubmit={handleSubmit} className="space-y-3">
+            <Input type="email" placeholder="E-mail" value={email} onChange={(e) => setEmail(e.target.value)} required autoFocus />
+            <Input type="password" placeholder="Senha" value={pwd} onChange={(e) => setPwd(e.target.value)} required minLength={6} />
+            <Button type="submit" className="w-full" disabled={loading}>
+              {loading ? "Aguarde…" : mode === "login" ? "Entrar" : "Criar conta"}
+            </Button>
+            <button
+              type="button"
+              onClick={() => setMode(mode === "login" ? "signup" : "login")}
+              className="block w-full text-center text-sm text-muted-foreground hover:underline"
+            >
+              {mode === "login" ? "Criar nova conta" : "Já tenho conta"}
+            </button>
             <Link to="/" className="block text-center text-sm text-muted-foreground hover:underline">← Voltar</Link>
           </form>
-          <p className="text-[10px] text-center text-muted-foreground">Senha padrão: <code>{ADMIN_PASSWORD}</code></p>
+          <p className="text-[10px] text-center text-muted-foreground">
+            Após criar a conta, peça a um administrador para conceder o papel de admin.
+          </p>
         </Card>
         <Toaster />
       </div>
     );
   }
 
-  return <AdminDashboard onLogout={() => { setAdminAuthed(false); setAuthed(false); }} />;
+  return <AdminDashboard onLogout={logout} />;
 }
 
 type EditableField = "pregador_id" | "ministro_id" | "back1_id" | "back2_id" | "back3_id" | "instrumento_id";
