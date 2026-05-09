@@ -5,12 +5,9 @@ import {
   OrgChart,
   type Department,
   type Employee,
-  type OrgPosition,
 } from "@/components/organograma/OrgChart";
 import { toast } from "sonner";
 import { Toaster } from "@/components/ui/sonner";
-import { Users, Building2, CheckCircle2, Plus } from "lucide-react";
-import { Button } from "@/components/ui/button";
 
 export const Route = createFileRoute("/organograma")({
   head: () => ({ meta: [{ title: "Organograma" }] }),
@@ -18,7 +15,7 @@ export const Route = createFileRoute("/organograma")({
 });
 
 function OrganogramaPage() {
-  const [positions, setPositions] = useState<OrgPosition[]>([]);
+  const [ceo, setCeo] = useState<Employee | null>(null);
   const [departments, setDepartments] = useState<Department[]>([]);
   const [employees, setEmployees] = useState<Employee[]>([]);
   const [companyId, setCompanyId] = useState<string | null>(null);
@@ -26,16 +23,7 @@ function OrganogramaPage() {
   const [loading, setLoading] = useState(true);
 
   const loadData = useCallback(async (cid: string) => {
-    setLoading(true);
-
-    const [posRes, deptRes, empRes] = await Promise.all([
-      supabase
-        .from("org_positions")
-        .select(
-          "*, department:departments(id, name, color), employee:employees(id, first_name, last_name, full_name, job_title, photo_url)"
-        )
-        .eq("company_id", cid)
-        .order("ordem"),
+    const [deptRes, empRes] = await Promise.all([
       supabase
         .from("departments")
         .select("id, name, color")
@@ -43,26 +31,30 @@ function OrganogramaPage() {
         .order("name"),
       supabase
         .from("employees")
-        .select("id, first_name, last_name, full_name, job_title, photo_url")
+        .select("id, first_name, last_name, full_name, job_title, photo_url, department, role, manager_id, reports_to")
         .eq("company_id", cid)
         .eq("status", "active")
         .order("first_name"),
     ]);
 
-    if (posRes.error) toast.error("Erro ao carregar organograma");
-    else setPositions((posRes.data ?? []) as OrgPosition[]);
+    const allEmps: Employee[] = (empRes.data ?? []) as Employee[];
 
-    if (deptRes.data) setDepartments(deptRes.data as Department[]);
-    if (empRes.data) setEmployees(empRes.data as Employee[]);
+    // CEO = active employee with no reports_to and no manager_id (root)
+    const root =
+      allEmps.find(e => !e.reports_to && !e.manager_id) ??
+      allEmps.find(e => e.role === "admin") ??
+      null;
 
+    setCeo(root);
+    setDepartments((deptRes.data ?? []) as Department[]);
+    // Employees in the chart are all EXCEPT the CEO
+    setEmployees(allEmps.filter(e => e.id !== root?.id));
     setLoading(false);
   }, []);
 
   useEffect(() => {
     async function init() {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
+      const { data: { user } } = await supabase.auth.getUser();
       if (!user) { setLoading(false); return; }
 
       const { data: emp } = await supabase
@@ -80,134 +72,91 @@ function OrganogramaPage() {
     init();
   }, [loadData]);
 
-  async function handleSave(id: string, data: Partial<OrgPosition>) {
-    const { error } = await supabase
-      .from("org_positions")
-      .update({
-        titulo: data.titulo,
-        department_id: data.department_id ?? null,
-        employee_id: data.employee_id ?? null,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", id);
-
-    if (error) {
-      toast.error("Erro ao salvar posição");
-    } else {
-      toast.success("Posição actualizada");
-      if (companyId) loadData(companyId);
-    }
-  }
-
-  async function handleAddChild(parentId: string | null) {
+  async function handleAddDepartment(data: { name: string; color: string }) {
     if (!companyId) return;
-    const siblings = positions.filter((p) => p.parent_id === parentId);
-    const maxOrdem = siblings.reduce((acc, p) => Math.max(acc, p.ordem), -1);
-
-    const { error } = await supabase.from("org_positions").insert({
-      titulo: "Cargo por preencher",
-      parent_id: parentId,
+    const { error } = await supabase.from("departments").insert({
+      name: data.name,
+      color: data.color,
       company_id: companyId,
-      ordem: maxOrdem + 1,
     });
-
     if (error) {
-      toast.error("Erro ao adicionar posição");
+      toast.error("Erro ao criar departamento");
     } else {
+      toast.success("Departamento criado");
       loadData(companyId);
     }
   }
 
-  async function handleDelete(id: string) {
-    const { error } = await supabase.from("org_positions").delete().eq("id", id);
+  async function handleAddPosition(deptId: string, empId: string, jobTitle: string) {
+    if (!companyId) return;
+    // Get dept name to update employee's department text field
+    const dept = departments.find(d => d.id === deptId);
+    if (!dept) return;
+
+    const { error } = await supabase
+      .from("employees")
+      .update({
+        department: dept.name,
+        job_title: jobTitle || undefined,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", empId);
+
     if (error) {
-      toast.error("Erro ao remover posição");
+      toast.error("Erro ao adicionar cargo");
     } else {
-      toast.success("Posição removida");
-      if (companyId) loadData(companyId);
+      toast.success("Cargo adicionado");
+      loadData(companyId);
     }
   }
 
-  const total = positions.length;
-  const preenchidas = positions.filter((p) => !!p.employee_id).length;
-  const deptsCount = new Set(positions.map((p) => p.department_id).filter(Boolean)).size;
+  function handleReorderDepts(ids: string[]) {
+    // Client-side reorder only — can be persisted later
+    setDepartments(prev => {
+      const map = new Map(prev.map(d => [d.id, d]));
+      return ids.map(id => map.get(id)!).filter(Boolean);
+    });
+  }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div style={{ minHeight: "100vh", background: "#EEECEA" }}>
       <Toaster />
 
       {/* Header */}
-      <div className="bg-white border-b px-6 py-4 flex items-center justify-between">
+      <div style={{
+        background: "white", borderBottom: "0.5px solid #E4E4E0",
+        padding: "14px 24px", display: "flex", alignItems: "center",
+        justifyContent: "space-between",
+      }}>
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Organograma</h1>
-          <p className="text-sm text-gray-500 mt-0.5">
-            Estrutura hierárquica — {total} posições
+          <h1 style={{ fontSize: 15, fontWeight: 700, color: "#2C2C2A" }}>Organograma</h1>
+          <p style={{ fontSize: 12, color: "#8A8A85", marginTop: 1 }}>
+            Estrutura hierárquica da empresa
           </p>
         </div>
-        {isAdmin && (
-          <Button onClick={() => handleAddChild(null)} size="sm">
-            <Plus className="w-4 h-4 mr-1.5" />
-            Nova posição raiz
-          </Button>
-        )}
+        <div style={{ display: "flex", gap: 12, fontSize: 12, color: "#8A8A85" }}>
+          <span><b style={{ color: "#2C2C2A" }}>{departments.length}</b> departamentos</span>
+          <span><b style={{ color: "#2C2C2A" }}>{employees.length}</b> colaboradores</span>
+        </div>
       </div>
 
-      {/* Stats */}
-      <div className="grid grid-cols-3 gap-4 px-6 py-4">
-        <StatCard
-          icon={<Users className="w-5 h-5 text-blue-500" />}
-          label="Posições"
-          value={total}
-        />
-        <StatCard
-          icon={<CheckCircle2 className="w-5 h-5 text-green-500" />}
-          label="Preenchidas"
-          value={preenchidas}
-        />
-        <StatCard
-          icon={<Building2 className="w-5 h-5 text-orange-500" />}
-          label="Departamentos"
-          value={deptsCount}
-        />
-      </div>
-
-      {/* Chart */}
-      <div className="overflow-auto pb-12">
+      {/* Chart canvas */}
+      <div style={{ overflow: "auto", padding: "32px 24px 48px" }}>
         {loading ? (
-          <div className="flex items-center justify-center py-24 text-gray-400 text-sm">
+          <div style={{ textAlign: "center", color: "#8A8A85", paddingTop: 80, fontSize: 13 }}>
             A carregar organograma...
           </div>
         ) : (
           <OrgChart
-            positions={positions}
+            ceo={ceo}
             departments={departments}
             employees={employees}
-            onSave={handleSave}
-            onAddChild={handleAddChild}
-            onDelete={handleDelete}
             isAdmin={isAdmin}
+            onAddDepartment={handleAddDepartment}
+            onAddPosition={handleAddPosition}
+            onReorderDepts={handleReorderDepts}
           />
         )}
-      </div>
-    </div>
-  );
-}
-
-function StatCard({
-  icon,
-  label,
-  value,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 px-4 py-3 flex items-center gap-3">
-      <div className="p-2 bg-gray-50 rounded-lg">{icon}</div>
-      <div>
-        <p className="text-2xl font-bold text-gray-900">{value}</p>
-        <p className="text-xs text-gray-500">{label}</p>
       </div>
     </div>
   );
