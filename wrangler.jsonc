@@ -1,6 +1,14 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "tanstack-start-app",
+  "name": "workiosite",
   "compatibility_date": "2025-09-24",
-  "compatibility_flags": ["nodejs_compat"]
+  "compatibility_flags": ["nodejs_compat"],
+  "ai": {
+    "binding": "MY_IA"
+  },
+  "send_email": [
+    {
+      "name": "MY_EMAIL"
+    }
+  ]
 }

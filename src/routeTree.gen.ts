@@ -11,6 +11,7 @@
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ObrasRouteImport } from './routes/obras'
 import { Route as OrganogramaRouteImport } from './routes/organograma'
+import { Route as TesteIaRouteImport } from './routes/teste-ia'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 
@@ -22,6 +23,11 @@ const ObrasRoute = ObrasRouteImport.update({
 const OrganogramaRoute = OrganogramaRouteImport.update({
   id: '/organograma',
   path: '/organograma',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TesteIaRoute = TesteIaRouteImport.update({
+  id: '/teste-ia',
+  path: '/teste-ia',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -39,12 +45,14 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/organograma': typeof OrganogramaRoute
+  '/teste-ia': typeof TesteIaRoute
   '/obras': typeof ObrasRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/organograma': typeof OrganogramaRoute
+  '/teste-ia': typeof TesteIaRoute
   '/obras': typeof ObrasRoute
 }
 export interface FileRoutesById {
@@ -52,20 +60,22 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
   '/organograma': typeof OrganogramaRoute
+  '/teste-ia': typeof TesteIaRoute
   '/obras': typeof ObrasRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/organograma' | '/obras'
+  fullPaths: '/' | '/admin' | '/organograma' | '/teste-ia' | '/obras'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/organograma' | '/obras'
-  id: '__root__' | '/' | '/admin' | '/organograma' | '/obras'
+  to: '/' | '/admin' | '/organograma' | '/teste-ia' | '/obras'
+  id: '__root__' | '/' | '/admin' | '/organograma' | '/teste-ia' | '/obras'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
   OrganogramaRoute: typeof OrganogramaRoute
+  TesteIaRoute: typeof TesteIaRoute
   ObrasRoute: typeof ObrasRoute
 }
 
@@ -83,6 +93,13 @@ declare module '@tanstack/react-router' {
       path: '/organograma'
       fullPath: '/organograma'
       preLoaderRoute: typeof OrganogramaRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/teste-ia': {
+      id: '/teste-ia'
+      path: '/teste-ia'
+      fullPath: '/teste-ia'
+      preLoaderRoute: typeof TesteIaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -106,6 +123,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
   OrganogramaRoute: OrganogramaRoute,
+  TesteIaRoute: TesteIaRoute,
   ObrasRoute: ObrasRoute,
 }
 export const routeTree = rootRouteImport
