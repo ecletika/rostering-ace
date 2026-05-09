@@ -10,12 +10,18 @@
 
 import { Route as rootRouteImport } from './routes/__root'
 import { Route as ObrasRouteImport } from './routes/obras'
+import { Route as OrganogramaRouteImport } from './routes/organograma'
 import { Route as AdminRouteImport } from './routes/admin'
 import { Route as IndexRouteImport } from './routes/index'
 
 const ObrasRoute = ObrasRouteImport.update({
   id: '/obras',
   path: '/obras',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrganogramaRoute = OrganogramaRouteImport.update({
+  id: '/organograma',
+  path: '/organograma',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AdminRoute = AdminRouteImport.update({
@@ -32,30 +38,34 @@ const IndexRoute = IndexRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/organograma': typeof OrganogramaRoute
   '/obras': typeof ObrasRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/organograma': typeof OrganogramaRoute
   '/obras': typeof ObrasRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/admin': typeof AdminRoute
+  '/organograma': typeof OrganogramaRoute
   '/obras': typeof ObrasRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/admin' | '/obras'
+  fullPaths: '/' | '/admin' | '/organograma' | '/obras'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/admin' | '/obras'
-  id: '__root__' | '/' | '/admin' | '/obras'
+  to: '/' | '/admin' | '/organograma' | '/obras'
+  id: '__root__' | '/' | '/admin' | '/organograma' | '/obras'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AdminRoute: typeof AdminRoute
+  OrganogramaRoute: typeof OrganogramaRoute
   ObrasRoute: typeof ObrasRoute
 }
 
@@ -66,6 +76,13 @@ declare module '@tanstack/react-router' {
       path: '/obras'
       fullPath: '/obras'
       preLoaderRoute: typeof ObrasRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/organograma': {
+      id: '/organograma'
+      path: '/organograma'
+      fullPath: '/organograma'
+      preLoaderRoute: typeof OrganogramaRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/admin': {
@@ -88,6 +105,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AdminRoute: AdminRoute,
+  OrganogramaRoute: OrganogramaRoute,
   ObrasRoute: ObrasRoute,
 }
 export const routeTree = rootRouteImport

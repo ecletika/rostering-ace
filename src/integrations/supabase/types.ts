@@ -14,6 +14,64 @@ export type Database = {
   }
   public: {
     Tables: {
+      org_positions: {
+        Row: {
+          company_id: string | null
+          created_at: string
+          department_id: string | null
+          employee_id: string | null
+          id: string
+          ordem: number
+          parent_id: string | null
+          titulo: string
+          updated_at: string
+        }
+        Insert: {
+          company_id?: string | null
+          created_at?: string
+          department_id?: string | null
+          employee_id?: string | null
+          id?: string
+          ordem?: number
+          parent_id?: string | null
+          titulo?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string | null
+          created_at?: string
+          department_id?: string | null
+          employee_id?: string | null
+          id?: string
+          ordem?: number
+          parent_id?: string | null
+          titulo?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "org_positions_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "org_positions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "org_positions_employee_id_fkey"
+            columns: ["employee_id"]
+            isOneToOne: false
+            referencedRelation: "employees"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "org_positions_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       colaboradores: {
         Row: {
           created_at: string
