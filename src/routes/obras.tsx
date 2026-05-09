@@ -190,6 +190,7 @@ const pageMeta: Record<Screen, { title: string; sub: string; btn: string }> = {
 const DAYS = ["Dom","Seg","Ter","Qua","Qui","Sex","Sáb"];
 
 type KioskObra = { id: string; name: string; client: string; authorized: boolean };
+type KioskEmployee = { id: string; name: string; initials: string };
 
 function ObrasApp() {
   const [screen, setScreen] = useState<Screen>("dashboard");
@@ -199,6 +200,8 @@ function ObrasApp() {
   const [aprovBadge, setAprovBadge] = useState(4);
   const [kioskObras, setKioskObras] = useState<KioskObra[]>([]);
   const [kioskLoading, setKioskLoading] = useState(false);
+  const [kioskEmployee, setKioskEmployee] = useState<KioskEmployee | null>(null);
+  const [pinError, setPinError] = useState<string | null>(null);
 
   /* Inject CSS once */
   useEffect(() => {
@@ -220,50 +223,50 @@ function ObrasApp() {
     return () => clearInterval(id);
   }, []);
 
-  /* Carrega obras autorizadas via RPC (SECURITY DEFINER — funciona sem auth) */
-  useEffect(() => {
-    if (screen !== "kiosk") return;
+  /* PIN — identificar colaborador e carregar obras */
+  const addPin = (v: string) => { if (pin.length < 4) { setPin(p => p + v); setPinError(null); } };
+  const clearPin = () => { setPin(p => p.slice(0,-1)); setPinError(null); };
+  const goKStep = (n: number) => { if (n === 0) { setPin(""); setKioskEmployee(null); setPinError(null); } setKStep(n); };
+
+  const confirmPin = async () => {
+    if (pin.length !== 4) return;
     setKioskLoading(true);
+    setPinError(null);
 
-    // Tentar obter o employee_id do utilizador autenticado
-    supabase.auth.getUser().then(async ({ data: { user } }) => {
-      let employeeId: string | null = null;
+    // 1. Procurar colaborador pelo punch_code
+    const { data: emp } = await supabase
+      .from("employees")
+      .select("id, name")
+      .eq("punch_code", pin)
+      .eq("active", true)
+      .maybeSingle();
 
-      if (user) {
-        const { data: emp } = await supabase
-          .from("employees")
-          .select("id")
-          .eq("auth_user_id", user.id)
-          .maybeSingle();
-        employeeId = emp?.id ?? null;
-      }
-
-      // Chamar RPC que contorna RLS de forma segura
-      const { data, error } = await supabase.rpc("m22_kiosk_obras", {
-        p_employee_id: employeeId,
-      });
-
-      if (!error && data) {
-        setKioskObras(
-          (data as any[]).map((row) => ({
-            id: row.id,
-            name: row.name,
-            client: row.client_name,
-            authorized: row.authorized,
-          }))
-        );
-      } else {
-        setKioskObras([]);
-      }
+    if (!emp) {
+      setPinError("PIN inválido. Tente novamente.");
       setKioskLoading(false);
-    });
-  }, [screen]);
+      return;
+    }
 
-  /* PIN */
-  const addPin = (v: string) => { if (pin.length < 4) setPin(p => p + v); };
-  const clearPin = () => setPin(p => p.slice(0,-1));
-  const confirmPin = () => { if (pin.length === 4) goKStep(1); };
-  const goKStep = (n: number) => { if (n === 0) setPin(""); setKStep(n); };
+    const initials = emp.name.split(" ").slice(0,2).map((w: string) => w[0]).join("").toUpperCase();
+    setKioskEmployee({ id: emp.id, name: emp.name, initials });
+
+    // 2. Carregar obras autorizadas para este colaborador
+    const { data: obras } = await supabase.rpc("m22_kiosk_obras", {
+      p_employee_id: emp.id,
+    });
+
+    setKioskObras(
+      (obras ?? []).map((row: any) => ({
+        id: row.id,
+        name: row.name,
+        client: row.client_name,
+        authorized: row.authorized,
+      }))
+    );
+
+    setKioskLoading(false);
+    goKStep(1);
+  };
 
   const pinDisplay = pin.length ? "• ".repeat(pin.length) + "  ".repeat(4-pin.length) : "• • • •";
 
@@ -332,7 +335,7 @@ function ObrasApp() {
             {screen==="obras"        && <SObras/>}
             {screen==="equipas"      && <SEquipas/>}
             {screen==="alocacoes"    && <SAlocacoes calDays={calDays}/>}
-            {screen==="kiosk"        && <SKiosk kStep={kStep} goKStep={goKStep} pin={pinDisplay} addPin={addPin} clearPin={clearPin} confirmPin={confirmPin} kTime={kTime} obras={kioskObras} obrasLoading={kioskLoading}/>}
+            {screen==="kiosk"        && <SKiosk kStep={kStep} goKStep={goKStep} pin={pinDisplay} addPin={addPin} clearPin={clearPin} confirmPin={confirmPin} kTime={kTime} obras={kioskObras} obrasLoading={kioskLoading} employee={kioskEmployee} pinError={pinError}/>}
             {screen==="aprovacoes"   && <SAprovacoes onApprove={()=>setAprovBadge(b=>Math.max(0,b-1))}/>}
             {screen==="relatorios"   && <SRelatorios/>}
             {screen==="auditoria"    && <SAuditoria/>}
@@ -757,10 +760,11 @@ function SAlocacoes({calDays}:{calDays:{d:Date;offset:number}[]}) {
 /* ────────────────────────────────────────────────────────────
    KIOSK
 ──────────────────────────────────────────────────────────── */
-function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime,obras,obrasLoading}:{
+function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime,obras,obrasLoading,employee,pinError}:{
   kStep:number;goKStep:(n:number)=>void;pin:string;
   addPin:(v:string)=>void;clearPin:()=>void;confirmPin:()=>void;kTime:string;
   obras:KioskObra[];obrasLoading:boolean;
+  employee:KioskEmployee|null;pinError:string|null;
 }) {
   const today = new Date();
   const dateStr = today.toLocaleDateString("pt-PT",{weekday:"long",day:"numeric",month:"long",year:"numeric"});
@@ -780,7 +784,10 @@ function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime,obras,obrasL
                   <div style={{textAlign:"center",marginBottom:14}}>
                     <div style={{fontSize:13,color:"rgba(255,255,255,0.6)",marginBottom:10}}>Identificação do funcionário</div>
                     <div style={{fontSize:36,fontWeight:700,color:"white",letterSpacing:"0.2em",background:"rgba(255,255,255,0.08)",borderRadius:10,padding:12,marginBottom:8}}>{pin}</div>
-                    <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Introduza o PIN ou aproxime o cartão</div>
+                    {pinError
+                      ? <div style={{fontSize:11,color:"var(--red-400)",marginBottom:4}}>{pinError}</div>
+                      : <div style={{fontSize:11,color:"rgba(255,255,255,0.4)"}}>Introduza o PIN ou aproxime o cartão</div>
+                    }
                   </div>
                   <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginBottom:6}}>
                     {["1","2","3","4","5","6","7","8","9"].map(n=>(
@@ -788,21 +795,22 @@ function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime,obras,obrasL
                     ))}
                     <button className="kiosk-btn kbtn-secondary" style={{padding:10,fontSize:16}} onClick={clearPin}><i className="ti ti-backspace"/></button>
                     <button className="kiosk-btn kbtn-secondary" style={{padding:10,fontSize:16}} onClick={()=>addPin("0")}>0</button>
-                    <button className="kiosk-btn kbtn-primary" style={{padding:10,fontSize:16}} onClick={confirmPin}><i className="ti ti-arrow-right"/></button>
+                    <button className="kiosk-btn kbtn-primary" style={{padding:10,fontSize:16}} onClick={()=>confirmPin()}><i className="ti ti-arrow-right"/></button>
                   </div>
                 </div>
               )}
-              {kStep===1 && (
+              {kStep===1 && employee && (
                 <div>
                   <div className="kiosk-worker">
-                    <div className="kiosk-avatar">JS</div>
+                    <div className="kiosk-avatar">{employee.initials}</div>
                     <div>
-                      <div style={{fontSize:14,fontWeight:600,color:"white"}}>João Silva</div>
-                      <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",marginTop:2}}>Obra planeada: <strong style={{color:"var(--teal-200)"}}>Prédio Lisboa</strong></div>
+                      <div style={{fontSize:14,fontWeight:600,color:"white"}}>{employee.name}</div>
+                      <div style={{fontSize:11,color:"rgba(255,255,255,0.6)",marginTop:2}}>
+                        {obras.length > 0 ? `${obras.length} obra(s) autorizada(s)` : "Sem obras atribuídas"}
+                      </div>
                     </div>
                   </div>
-                  <button className="kiosk-btn kbtn-primary" onClick={()=>goKStep(2)}><i className="ti ti-login"/> Picar entrada — Prédio Lisboa</button>
-                  <button className="kiosk-btn kbtn-secondary" onClick={()=>goKStep(3)}><i className="ti ti-swap"/> Estou noutra obra</button>
+                  <button className="kiosk-btn kbtn-secondary" onClick={()=>goKStep(3)}><i className="ti ti-swap"/> Escolher obra</button>
                   <button className="kiosk-btn kbtn-secondary" style={{opacity:0.5,fontSize:11}} onClick={()=>goKStep(0)}>Cancelar</button>
                 </div>
               )}
@@ -812,8 +820,7 @@ function SKiosk({kStep,goKStep,pin,addPin,clearPin,confirmPin,kTime,obras,obrasL
                     <i className="ti ti-check" style={{fontSize:24,color:"var(--teal-200)"}}/>
                   </div>
                   <div style={{fontSize:15,fontWeight:700,color:"white"}}>Picagem registada!</div>
-                  <div style={{fontSize:12,color:"rgba(255,255,255,0.6)",marginTop:4}}>João Silva · Entrada</div>
-                  <div style={{fontSize:13,color:"var(--teal-200)",marginTop:4,fontWeight:600}}>Prédio Lisboa · ABC Construções</div>
+                  <div style={{fontSize:12,color:"rgba(255,255,255,0.6)",marginTop:4}}>{employee?.name ?? "Funcionário"} · Entrada</div>
                   <div style={{fontSize:11,color:"rgba(255,255,255,0.4)",marginTop:4}}>{kTime} · {today.toLocaleDateString("pt-PT")}</div>
                   <button className="kiosk-btn kbtn-secondary" onClick={()=>goKStep(0)} style={{fontSize:12,marginTop:12}}>Nova picagem</button>
                 </div>
